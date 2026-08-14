@@ -1,4 +1,23 @@
 import asyncio
+from protocol import parse_command 
+
+
+def handle_command(command):
+    if command is None or len(command) == 0:
+        return b"-ERR empty command\r\n"
+
+    # The command name is the first element. Redis treats it
+    # case-insensitively, so we uppercase it for comparison.
+    name = command[0].upper()
+
+    if name == "PING":
+        return b"+PONG\r\n"
+    elif name == "ECHO":
+        # ECHO returns its argument back as a bulk string.
+        message = command[1]
+        return f"${len(message)}\r\n{message}\r\n".encode()
+    else:
+        return f"-ERR unknown command '{command[0]}'\r\n".encode()
 
 async def handle_client(reader, writer):
     addr = writer.get_extra_info("peername")
@@ -11,9 +30,11 @@ async def handle_client(reader, writer):
                 print(f"Connection closed by {addr}")
                 break
 
-            print(f"Received raw bytes: {data!r}")
+            command = parse_command(data)
+            print(f"Parsed command: {command}")
 
-            writer.write(b"+PONG\r\n")
+            response = handle_command(command)
+            writer.write(response)
             await writer.drain()
     except (ConnectionResetError, ConnectionAbortedError):
         print(f"Connection reset by {addr}")
@@ -23,8 +44,6 @@ async def handle_client(reader, writer):
             await writer.wait_closed()
         except (ConnectionResetError, ConnectionAbortedError, OSError):
             pass
-
-
 
 async def main():
     server = await asyncio.start_server(handle_client, "127.0.0.1", 6380)
