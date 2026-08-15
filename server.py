@@ -22,6 +22,10 @@ def handle_command(command):
         key = command[1]
         value = command[2]
         db.set(key, value)
+        # Optional: SET key value EX seconds
+        if len(command) >= 5 and command[3].upper() == "EX":
+            seconds = int(command[4])
+            db.set_expiry(key, seconds)
         return b"+OK\r\n"
 
     elif name == "GET":
@@ -43,6 +47,26 @@ def handle_command(command):
             if db.exists(key):
                 count += 1
         return f":{count}\r\n".encode()
+
+    elif name == "EXPIRE":
+        # EXPIRE key seconds
+        key = command[1]
+        seconds = int(command[2])
+        if db.set_expiry(key, seconds):
+            return b":1\r\n"
+        return b":0\r\n"
+
+    elif name == "TTL":
+        # TTL key
+        key = command[1]
+        return f":{db.ttl(key)}\r\n".encode()
+
+    elif name == "PERSIST":
+        # PERSIST key
+        key = command[1]
+        if db.persist(key):
+            return b":1\r\n"
+        return b":0\r\n"
 
     else:
         return f"-ERR unknown command '{command[0]}'\r\n".encode()
@@ -73,6 +97,7 @@ async def handle_client(reader, writer):
             await writer.wait_closed()
         except (ConnectionResetError, ConnectionAbortedError, OSError):
             pass
+
 
 async def main():
     server = await asyncio.start_server(handle_client, "127.0.0.1", 6380)
