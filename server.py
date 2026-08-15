@@ -5,6 +5,7 @@ from datastore import DataStore
 # Create the single database instance shared by all connections.
 db = DataStore()
 
+
 def handle_command(command):
     if command is None or len(command) == 0:
         return b"-ERR empty command\r\n"
@@ -49,7 +50,6 @@ def handle_command(command):
         return f":{count}\r\n".encode()
 
     elif name == "EXPIRE":
-        # EXPIRE key seconds
         key = command[1]
         seconds = int(command[2])
         if db.set_expiry(key, seconds):
@@ -57,16 +57,18 @@ def handle_command(command):
         return b":0\r\n"
 
     elif name == "TTL":
-        # TTL key
         key = command[1]
         return f":{db.ttl(key)}\r\n".encode()
 
     elif name == "PERSIST":
-        # PERSIST key
         key = command[1]
         if db.persist(key):
             return b":1\r\n"
         return b":0\r\n"
+
+    elif name == "DBSIZE":
+        # How many keys are physically in the store (real Redis has this too).
+        return f":{len(db._data)}\r\n".encode()
 
     else:
         return f"-ERR unknown command '{command[0]}'\r\n".encode()
@@ -99,9 +101,25 @@ async def handle_client(reader, writer):
             pass
 
 
+async def expiry_sweeper():
+    """
+    Background task: periodically run active expiration so that expired
+    keys nobody reads are still cleaned up. Runs for the life of the server.
+    """
+    while True:
+        # Keep sweeping while lots of keys are expiring, then rest.
+        while db.active_expire_cycle() > 0.25:
+            pass
+        await asyncio.sleep(0.1)  # 100ms between cycles
+
+
 async def main():
     server = await asyncio.start_server(handle_client, "127.0.0.1", 6380)
     print("Server listening on 127.0.0.1:6380")
+
+    # Launch the background expiry sweeper.
+    asyncio.create_task(expiry_sweeper())
+
     async with server:
         await server.serve_forever()
 

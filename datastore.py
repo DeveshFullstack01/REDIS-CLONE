@@ -1,4 +1,5 @@
 import time
+import random
 
 
 class DataStore:
@@ -69,6 +70,29 @@ class DataStore:
         if key not in self._expires:
             return -1
         return int(self._expires[key] - time.time())
+    
+    
+    def active_expire_cycle(self, sample_size=20):
+        """
+        One round of active expiration. Samples up to `sample_size` keys
+        that have expiry times, deletes the expired ones, and returns the
+        fraction that were expired (so the caller can decide to run again).
+        """
+        keys_with_expiry = list(self._expires.keys())
+        if not keys_with_expiry:
+            return 0.0
+
+        # Sample randomly, but don't try to sample more than we have.
+        sample_count = min(sample_size, len(keys_with_expiry))
+        sample = random.sample(keys_with_expiry, sample_count)
+
+        expired = 0
+        for key in sample:
+            if self._is_expired(key):
+                self._remove(key)
+                expired += 1
+
+        return expired / sample_count
 
     def persist(self, key):
         """Remove a key's expiry, making it permanent. Returns True if it had one."""
