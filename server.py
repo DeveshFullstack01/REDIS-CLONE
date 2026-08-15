@@ -1,23 +1,60 @@
 import asyncio
-from protocol import parse_command 
+from protocol import parse_command
 
+# This dictionary is our entire database, held in memory.
+# Keys and values are both strings, for now.
+store = {}
 
 def handle_command(command):
     if command is None or len(command) == 0:
         return b"-ERR empty command\r\n"
 
-    # The command name is the first element. Redis treats it
-    # case-insensitively, so we uppercase it for comparison.
     name = command[0].upper()
 
     if name == "PING":
         return b"+PONG\r\n"
+
     elif name == "ECHO":
-        # ECHO returns its argument back as a bulk string.
         message = command[1]
         return f"${len(message)}\r\n{message}\r\n".encode()
+
+    elif name == "SET":
+        # SET key value  ->  store the pair, reply +OK
+        key = command[1]
+        value = command[2]
+        store[key] = value
+        return b"+OK\r\n"
+
+    elif name == "GET":
+        # GET key  ->  return the value, or null if missing
+        key = command[1]
+        if key in store:
+            value = store[key]
+            return f"${len(value)}\r\n{value}\r\n".encode()
+        else:
+            return b"$-1\r\n"  # RESP null: "this key does not exist"
+
+    elif name == "DEL":
+        # DEL key [key ...]  ->  delete keys, reply count of how many existed
+        deleted = 0
+        for key in command[1:]:
+            if key in store:
+                del store[key]
+                deleted += 1
+        return f":{deleted}\r\n".encode()
+
+    elif name == "EXISTS":
+        # EXISTS key [key ...]  ->  reply count of how many exist
+        count = 0
+        for key in command[1:]:
+            if key in store:
+                count += 1
+        return f":{count}\r\n".encode()
+
     else:
         return f"-ERR unknown command '{command[0]}'\r\n".encode()
+
+
 
 async def handle_client(reader, writer):
     addr = writer.get_extra_info("peername")
